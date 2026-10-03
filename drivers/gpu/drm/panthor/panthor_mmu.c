@@ -2051,9 +2051,9 @@ static void panthor_vma_link(struct panthor_vm *vm,
 {
 	struct panthor_gem_object *bo = to_panthor_bo(vma->base.gem.obj);
 
-	mutex_lock(&bo->base.base.gpuva.lock);
+	mutex_lock(panthor_fbsd_gpuva_lock(&bo->base.base));
 	drm_gpuva_link(&vma->base, vm_bo);
-	mutex_unlock(&bo->base.base.gpuva.lock);
+	mutex_unlock(panthor_fbsd_gpuva_lock(&bo->base.base));
 }
 
 static void panthor_vma_unlink(struct panthor_vma *vma)

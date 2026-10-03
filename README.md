@@ -5,11 +5,15 @@ The Linux panthor DRM driver (Arm Mali CSF GPUs) for FreeBSD, built against
 Brought up on the CIX Sky1 (Orange Pi 6 Plus), whose Mali-G720 Immortalis
 firmware describes in ACPI.
 
-- `drivers/gpu/drm/panthor/`: the driver from Linux v6.13, and
+- `drivers/gpu/drm/panthor/`: the driver from Linux v7.0, and
   `include/uapi/drm/panthor_drm.h`.  GPL-2.0-only or MIT.
-- `drivers/gpu/drm/drm_gem_shmem_helper.c`, `include/drm/`: Linux v6.13's GEM
-  shmem helper, which drm-kmod lacks.  GPL-2.0.
-- `drivers/iommu/`, `include/linux/io-pgtable.h`: Linux v6.13's io-pgtable
+- `drivers/gpu/drm/drm_gem_shmem_helper.c`, `drm_gpuvm.c`, `scheduler/`,
+  `include/drm/`: Linux v7.0's GEM shmem helper, GPU VA manager and GPU
+  scheduler.  drm-kmod (Linux v6.13) lacks the first and has older versions of
+  the others, so they are built into the module, their global symbols
+  prefixed `panthor_` (`freebsd/include/panthor_freebsd_rename.h`).
+  GPL-2.0 (shmem helper), GPL-2.0-only or MIT (drm_gpuvm), MIT (scheduler).
+- `drivers/iommu/`, `include/linux/io-pgtable.h`: Linux v7.0's io-pgtable
   and its Arm LPAE format, for the GPU's own MMU.  GPL-2.0.
 - `panthor/`: the module build.
 - `freebsd/`: FreeBSD glue (BSD-2-Clause):
@@ -22,7 +26,8 @@ firmware describes in ACPI.
   - `panthor_freebsd_devfreq.c`: in place of `panthor_devfreq.c`, a fixed
     clock for now.
   - `include/`: Linux headers LinuxKPI lacks or stubs, searched first, and
-    `panthor_freebsd_compat.h`, included into every file.
+    `panthor_freebsd_compat.h`, included into every file, with what
+    LinuxKPI and drm-kmod lack of Linux v7.0.
 
 Changes to the Linux files are marked `#ifdef __linux__` / `__FreeBSD__`.
 

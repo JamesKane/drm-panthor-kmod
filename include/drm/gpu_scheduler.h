@@ -727,7 +727,11 @@ __drm_sched_pending_job_iter_end(const struct drm_sched_pending_job_iter iter)
 	WARN_ON(!drm_sched_is_stopped(iter.sched));
 }
 
+#ifdef __FreeBSD__	/* DEFINE_CLASS is <sys/kobj.h>'s */
+LINUXKPI_DEFINE_CLASS(drm_sched_pending_job_iter, struct drm_sched_pending_job_iter,
+#else
 DEFINE_CLASS(drm_sched_pending_job_iter, struct drm_sched_pending_job_iter,
+#endif
 	     __drm_sched_pending_job_iter_end(_T),
 	     __drm_sched_pending_job_iter_begin(__sched),
 	     struct drm_gpu_scheduler *__sched);

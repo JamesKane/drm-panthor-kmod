@@ -31,6 +31,8 @@
  * to come.
  */
 
+#include <linux/clk.h>
+
 #include "panthor_device.h"
 #include "panthor_devfreq.h"
 
@@ -40,16 +42,14 @@ panthor_devfreq_init(struct panthor_device *ptdev __unused)
 	return (0);
 }
 
-int
+void
 panthor_devfreq_resume(struct panthor_device *ptdev __unused)
 {
-	return (0);
 }
 
-int
+void
 panthor_devfreq_suspend(struct panthor_device *ptdev __unused)
 {
-	return (0);
 }
 
 void
@@ -60,4 +60,10 @@ panthor_devfreq_record_busy(struct panthor_device *ptdev __unused)
 void
 panthor_devfreq_record_idle(struct panthor_device *ptdev __unused)
 {
+}
+
+unsigned long
+panthor_devfreq_get_freq(struct panthor_device *ptdev)
+{
+	return (clk_get_rate(ptdev->clks.core));
 }

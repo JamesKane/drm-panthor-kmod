@@ -294,7 +294,11 @@ long drm_sched_entity_flush(struct drm_sched_entity *entity, long timeout)
 	 * The client will not queue more jobs during this fini - consume
 	 * existing queued ones, or discard them on SIGKILL.
 	 */
+#ifdef __linux__
 	if (current->flags & PF_EXITING) {
+#else
+	if (panthor_fbsd_current_exiting()) {
+#endif
 		if (timeout)
 			ret = wait_event_timeout(
 					sched->job_scheduled,
@@ -308,7 +312,11 @@ long drm_sched_entity_flush(struct drm_sched_entity *entity, long timeout)
 	/* For a killed process disallow further enqueueing of jobs. */
 	last_user = cmpxchg(&entity->last_user, current->group_leader, NULL);
 	if (last_user == current->group_leader &&
+#ifdef __linux__
 	    (current->flags & PF_EXITING) && (current->exit_code == SIGKILL))
+#else
+	    panthor_fbsd_current_killed())
+#endif
 		drm_sched_entity_kill(entity);
 
 	return ret;

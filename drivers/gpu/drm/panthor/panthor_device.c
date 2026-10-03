@@ -78,12 +78,17 @@ static int panthor_clk_init(struct panthor_device *ptdev)
 
 static int panthor_init_power(struct device *dev)
 {
+#ifdef __linux__
 	struct dev_pm_domain_list  *pd_list = NULL;
 
 	if (dev->pm_domain)
 		return 0;
 
 	return devm_pm_domain_attach_list(dev, NULL, &pd_list);
+#else
+	/* The FreeBSD glue powers the GPU before panthor attaches. */
+	return 0;
+#endif
 }
 
 void panthor_device_unplug(struct panthor_device *ptdev)
@@ -194,7 +199,11 @@ int panthor_device_init(struct panthor_device *ptdev)
 	struct page *p;
 	int ret;
 
+#ifdef __linux__
 	ptdev->soc_data = of_device_get_match_data(ptdev->base.dev);
+#else
+	ptdev->soc_data = NULL;		/* no devicetree under ACPI */
+#endif
 
 	init_completion(&ptdev->unplug.done);
 	ret = drmm_mutex_init(&ptdev->base, &ptdev->unplug.lock);
@@ -440,7 +449,14 @@ static vm_fault_t panthor_mmio_vm_fault(struct vm_fault *vmf)
 	if (active)
 		pgprot = pgprot_noncached(pgprot);
 
+#ifdef __linux__
 	ret = vmf_insert_pfn_prot(vma, vmf->address, pfn, pgprot);
+#else
+	/* LinuxKPI's insert wants the VM object locked, as ttm's faults do. */
+	VM_OBJECT_WLOCK(vma->vm_obj);
+	ret = lkpi_vmf_insert_pfn_prot_locked(vma, vmf->address, pfn, pgprot);
+	VM_OBJECT_WUNLOCK(vma->vm_obj);
+#endif
 
 out_unlock:
 	mutex_unlock(&ptdev->pm.mmio_lock);
@@ -448,8 +464,25 @@ out_unlock:
 	return ret;
 }
 
+#ifdef __FreeBSD__
+/* LinuxKPI maps only areas whose operations have open and close. */
+static void
+panthor_mmio_vm_open(struct vm_area_struct *vma)
+{
+}
+
+static void
+panthor_mmio_vm_close(struct vm_area_struct *vma)
+{
+}
+#endif
+
 static const struct vm_operations_struct panthor_mmio_vm_ops = {
 	.fault = panthor_mmio_vm_fault,
+#ifdef __FreeBSD__
+	.open = panthor_mmio_vm_open,
+	.close = panthor_mmio_vm_close,
+#endif
 };
 
 int panthor_device_mmap_io(struct panthor_device *ptdev, struct vm_area_struct *vma)
@@ -555,8 +588,10 @@ int panthor_device_resume(struct device *dev)
 	 * access.
 	 */
 	mutex_lock(&ptdev->pm.mmio_lock);
+#ifdef __linux__	/* FreeBSD: the glue keeps the GPU resumed */
 	unmap_mapping_range(ptdev->base.anon_inode->i_mapping,
 			    DRM_PANTHOR_USER_MMIO_OFFSET, 0, 1);
+#endif
 	atomic_set(&ptdev->pm.state, PANTHOR_DEVICE_PM_STATE_ACTIVE);
 	mutex_unlock(&ptdev->pm.mmio_lock);
 	return 0;
@@ -594,8 +629,10 @@ int panthor_device_suspend(struct device *dev)
 	 */
 	mutex_lock(&ptdev->pm.mmio_lock);
 	atomic_set(&ptdev->pm.state, PANTHOR_DEVICE_PM_STATE_SUSPENDING);
+#ifdef __linux__	/* FreeBSD: the glue keeps the GPU resumed */
 	unmap_mapping_range(ptdev->base.anon_inode->i_mapping,
 			    DRM_PANTHOR_USER_MMIO_OFFSET, 0, 1);
+#endif
 	mutex_unlock(&ptdev->pm.mmio_lock);
 
 	if (panthor_device_is_initialized(ptdev) &&

@@ -20,6 +20,7 @@
 
 void panthor_gem_init(struct panthor_device *ptdev)
 {
+#ifdef __linux__	/* FreeBSD: drm-kmod has no huge page shmem mount */
 	int err;
 
 	if (IS_ENABLED(CONFIG_TRANSPARENT_HUGEPAGE) &&
@@ -32,6 +33,7 @@ void panthor_gem_init(struct panthor_device *ptdev)
 	else if (err)
 		drm_warn(&ptdev->base, "Can't use Transparent Hugepage (%d)\n",
 			 err);
+#endif
 }
 
 #ifdef CONFIG_DEBUG_FS
@@ -387,6 +389,17 @@ static const struct drm_gem_object_funcs panthor_gem_funcs = {
 	.vm_ops = &drm_gem_shmem_vm_ops,
 };
 
+#ifdef __FreeBSD__
+/*
+ * The lock drm_gpuvm takes to change a GEM object's VM_BO list: every GEM
+ * object it sees here is panthor's, imported ones too.
+ */
+struct mutex *panthor_fbsd_gpuva_lock(struct drm_gem_object *obj)
+{
+	return &container_of(obj, struct panthor_gem_object, base.base)->fbsd_gpuva_lock;
+}
+#endif
+
 /**
  * panthor_gem_create_object - Implementation of driver->gem_create_object.
  * @ddev: DRM device
@@ -405,6 +418,9 @@ struct drm_gem_object *panthor_gem_create_object(struct drm_device *ddev, size_t
 
 	obj->base.base.funcs = &panthor_gem_funcs;
 	mutex_init(&obj->label.lock);
+#ifdef __FreeBSD__
+	mutex_init(&obj->fbsd_gpuva_lock);
+#endif
 
 	panthor_gem_debugfs_bo_init(obj);
 

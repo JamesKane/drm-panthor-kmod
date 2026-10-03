@@ -272,6 +272,10 @@ static void *__arm_lpae_alloc_pages(size_t size, gfp_t gfp,
 		return NULL;
 
 	if (!cfg->coherent_walk) {
+#ifdef __FreeBSD__
+		/* FreeBSD's DMA tag for the GPU skips it: see panthor_freebsd.c. */
+		panthor_fbsd_dcache_wbinv(pages, size);
+#endif
 		dma = dma_map_single(dev, pages, size, DMA_TO_DEVICE);
 		if (dma_mapping_error(dev, dma))
 			goto out_free;
@@ -318,6 +322,10 @@ static void __arm_lpae_sync_pte(arm_lpae_iopte *ptep, int num_entries,
 {
 	dma_sync_single_for_device(cfg->iommu_dev, __arm_lpae_dma_addr(ptep),
 				   sizeof(*ptep) * num_entries, DMA_TO_DEVICE);
+#ifdef __FreeBSD__
+	/* FreeBSD's DMA tag for the GPU skips it: see panthor_freebsd.c. */
+	panthor_fbsd_dcache_wb(ptep, sizeof(*ptep) * num_entries);
+#endif
 }
 
 static void __arm_lpae_clear_pte(arm_lpae_iopte *ptep, struct io_pgtable_cfg *cfg, int num_entries)

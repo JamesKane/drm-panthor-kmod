@@ -40,6 +40,9 @@
 #include <linux/slab.h>
 
 #include <drm/drm_device.h>
+#include <drm/drm_gem.h>
+#include <drm/drm_prime.h>
+#include <linux/dma-buf.h>
 
 #include <arm64/cix/sky1_scmi.h>
 
@@ -236,4 +239,17 @@ enum dev_dma_attr
 device_get_dma_attr(struct device *dev __unused)
 {
 	return (DEV_DMA_NON_COHERENT);
+}
+
+/*
+ * Linux v7.0's drm_gem_is_prime_exported_dma_buf(): drm-kmod's PRIME ops are
+ * static, but its release function is exported.
+ */
+bool
+panthor_fbsd_prime_exported(struct drm_device *dev, struct dma_buf *dma_buf)
+{
+	struct drm_gem_object *obj = dma_buf->priv;
+
+	return (dma_buf->ops->release == drm_gem_dmabuf_release &&
+	    obj->dev == dev);
 }

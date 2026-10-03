@@ -33,6 +33,14 @@
 
 #include <drm/drm_device.h>
 #include <drm/drm_gem.h>
+#ifdef __FreeBSD__
+/* drm-kmod's (Linux v6.13) takes only the object: Linux v7.0's. */
+#undef drm_gem_gpuva_assert_lock_held
+#define	drm_gem_gpuva_assert_lock_held(gpuvm, obj)			\
+	lockdep_assert(drm_gpuvm_immediate_mode(gpuvm) ?		\
+	    mutex_is_locked(panthor_fbsd_gpuva_lock(obj)) :		\
+	    dma_resv_held((obj)->resv))
+#endif
 #include <drm/drm_exec.h>
 
 struct drm_gpuvm;

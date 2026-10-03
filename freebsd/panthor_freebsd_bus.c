@@ -54,6 +54,7 @@
 #include <sys/kernel.h>
 #include <sys/module.h>
 #include <sys/rman.h>
+#include <sys/sysctl.h>
 
 #include <vm/vm.h>
 #include <vm/pmap.h>
@@ -88,6 +89,10 @@ static struct panthor_fbsd_softc {
 } *panthor_fbsd_sc;
 
 static char *panthor_fbsd_acpi_ids[] = { "CIXH5000", NULL };
+
+/* panthor's module parameters, and those of its GPU scheduler. */
+SYSCTL_NODE(_hw, OID_AUTO, panthor, CTLFLAG_RW | CTLFLAG_MPSAFE, 0,
+    "panthor parameters");
 
 /*
  * The SCMI id of a clock the GPU's CLKT names: packages of the id, the

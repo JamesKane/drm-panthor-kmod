@@ -6,6 +6,7 @@ DRMKMOD?=	${.CURDIR:H:H}/drm-kmod
 PANTHORDIR=	${.CURDIR:H}/drivers/gpu/drm/panthor
 
 .PATH:	${PANTHORDIR} ${.CURDIR:H}/drivers/gpu/drm ${.CURDIR:H}/drivers/iommu \
+	${.CURDIR:H}/drivers/gpu/drm/scheduler \
 	${.CURDIR:H}/freebsd
 
 KMOD=	panthor
@@ -16,7 +17,9 @@ SRCS=	panthor_device.c \
 	panthor_gem.c \
 	panthor_gpu.c \
 	panthor_heap.c \
+	panthor_hw.c \
 	panthor_mmu.c \
+	panthor_pwr.c \
 	panthor_sched.c
 
 # In place of panthor_devfreq.c: a fixed clock for now.
@@ -25,8 +28,12 @@ SRCS+=	panthor_freebsd_devfreq.c
 SRCS+=	panthor_freebsd.c \
 	panthor_freebsd_bus.c
 
-# What drm-kmod and LinuxKPI lack.
+# What drm-kmod and LinuxKPI lack, or have older (drm-kmod is Linux v6.13).
 SRCS+=	drm_gem_shmem_helper.c \
+	drm_gpuvm.c \
+	sched_entity.c \
+	sched_fence.c \
+	sched_main.c \
 	io-pgtable.c \
 	io-pgtable-arm.c
 
@@ -63,6 +70,7 @@ CFLAGS+= -I${DRMKMOD}/drivers/gpu
 CFLAGS+= '-DKBUILD_MODNAME="${KMOD}"'
 CFLAGS+= '-DLINUXKPI_PARAM_PREFIX=panthor_' -DDRM_SYSCTL_PARAM_PREFIX=_${KMOD}
 CFLAGS+= ${KCONFIG:C/(.*)/-DCONFIG_\1/}
+CFLAGS+= -include ${.CURDIR:H}/freebsd/include/panthor_freebsd_rename.h
 CFLAGS+= -include ${.CURDIR:H}/freebsd/include/panthor_freebsd_compat.h
 CFLAGS+= -DCONFIG_DRM_PANTHOR -DCONFIG_PM -DCONFIG_IOMMU_IO_PGTABLE_LPAE
 
@@ -70,3 +78,6 @@ CFLAGS.panthor_freebsd_bus.c+= -DPANTHOR_FBSD_BUS
 CWARNFLAGS+=	-Wno-format -Wno-gnu-pointer-arith -Wno-cast-qual
 CWARNFLAGS.io-pgtable-arm.c+=	-Wno-macro-redefined
 CWARNFLAGS.panthor_drv.c+=	-Wno-unused-variable	# panthor_groups: no dev_groups
+# LinuxKPI's refcount_read() and folio functions take no const pointers.
+CWARNFLAGS.drm_gem_shmem_helper.c+= -Wno-incompatible-pointer-types-discards-qualifiers
+CWARNFLAGS.panthor_mmu.c+=	-Wno-incompatible-pointer-types-discards-qualifiers

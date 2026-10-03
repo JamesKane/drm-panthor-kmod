@@ -528,6 +528,11 @@ enum panthor_group_state {
  * struct panthor_group - Scheduling group object
  */
 struct panthor_group {
+#ifdef __FreeBSD__
+	/** @fbsd_registered: Linux's GROUP_REGISTERED xarray mark. */
+	bool fbsd_registered;
+#endif
+
 	/** @refcount: Reference count */
 	struct kref refcount;
 
@@ -3028,7 +3033,11 @@ void panthor_fdinfo_gather_group_samples(struct panthor_file *pfile)
 		return;
 
 	xa_lock(&gpool->xa);
-	xa_for_each_marked(&gpool->xa, i, group, GROUP_REGISTERED) {
+	xa_for_each(&gpool->xa, i, group) {
+#ifdef __FreeBSD__
+		if (!group->fbsd_registered)
+			continue;
+#endif
 		guard(spinlock)(&group->fdinfo.lock);
 		pfile->stats.cycles += group->fdinfo.data.cycles;
 		pfile->stats.time += group->fdinfo.data.time;
@@ -3760,7 +3769,11 @@ int panthor_group_create(struct panthor_file *pfile,
 
 	group_init_task_info(group);
 
+#ifdef __FreeBSD__
+	group->fbsd_registered = true;
+#else
 	xa_set_mark(&gpool->xa, gid, GROUP_REGISTERED);
+#endif
 
 	return gid;
 
@@ -3779,8 +3792,14 @@ int panthor_group_destroy(struct panthor_file *pfile, u32 group_handle)
 	struct panthor_scheduler *sched = ptdev->scheduler;
 	struct panthor_group *group;
 
+#ifdef __FreeBSD__
+	group = xa_load(&gpool->xa, group_handle);
+	if (!group || !group->fbsd_registered)
+		return -EINVAL;
+#else
 	if (!xa_get_mark(&gpool->xa, group_handle, GROUP_REGISTERED))
 		return -EINVAL;
+#endif
 
 	group = xa_erase(&gpool->xa, group_handle);
 	if (!group)
@@ -3812,7 +3831,12 @@ static struct panthor_group *group_from_handle(struct panthor_group_pool *pool,
 	struct panthor_group *group;
 
 	xa_lock(&pool->xa);
+#ifdef __FreeBSD__
+	group = xa_load(&pool->xa, group_handle);
+	group = group_get(group && group->fbsd_registered ? group : NULL);
+#else
 	group = group_get(xa_find(&pool->xa, &group_handle, group_handle, GROUP_REGISTERED));
+#endif
 	xa_unlock(&pool->xa);
 
 	return group;
@@ -3899,7 +3923,11 @@ panthor_fdinfo_gather_group_mem_info(struct panthor_file *pfile,
 		return;
 
 	xa_lock(&gpool->xa);
-	xa_for_each_marked(&gpool->xa, i, group, GROUP_REGISTERED) {
+	xa_for_each(&gpool->xa, i, group) {
+#ifdef __FreeBSD__
+		if (!group->fbsd_registered)
+			continue;
+#endif
 		stats->resident += group->fdinfo.kbo_sizes;
 		if (group->csg_id >= 0)
 			stats->active += group->fdinfo.kbo_sizes;

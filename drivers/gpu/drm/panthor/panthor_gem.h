@@ -67,6 +67,14 @@ struct panthor_gem_object {
 	/** @base: Inherit from drm_gem_shmem_object. */
 	struct drm_gem_shmem_object base;
 
+#ifdef __FreeBSD__
+	/*
+	 * @fbsd_gpuva_lock: what Linux has in drm_gem_object as gpuva.lock,
+	 * which drm-kmod's (Linux v6.13) has not: see panthor_fbsd_gpuva_lock().
+	 */
+	struct mutex fbsd_gpuva_lock;
+#endif
+
 	/**
 	 * @exclusive_vm_root_gem: Root GEM of the exclusive VM this GEM object
 	 * is attached to.

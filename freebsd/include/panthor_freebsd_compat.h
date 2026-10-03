@@ -52,6 +52,8 @@
 
 struct device;
 struct drm_device;
+struct drm_gem_object;
+struct dma_buf;
 struct drm_gpuvm;
 struct seq_file;
 
@@ -183,6 +185,75 @@ panthor_fbsd_dcache_wb(const void *va, size_t len)
 {
 	cpu_dcache_wb_range(__DECONST(void *, va), len);
 }
+
+/* Linux v7.0 interfaces panthor and its bundled DRM helpers use. */
+#include <linux/bits.h>
+#include <linux/cleanup.h>
+#include <linux/llist.h>
+#include <linux/spinlock.h>
+#include <linux/workqueue.h>
+
+#ifndef BIT_U64
+#define	BIT_U64(n)		(1ULL << (n))
+#endif
+#ifndef PMD_ORDER
+#define	PMD_ORDER		(PMD_SHIFT - PAGE_SHIFT)
+#endif
+#ifndef GENMASK_U64
+#define	GENMASK_U64(h, l)	GENMASK_ULL(h, l)
+#endif
+
+#define	init_llist_node(n)	((n)->next = (n))
+
+/* Linux v7.0's typed allocator LinuxKPI lacks. */
+#define	kvmalloc_objs(obj, count, ...)					\
+	kvmalloc_array((count), sizeof(obj), default_gfp(__VA_ARGS__))
+
+/* drm_gpuvm's lock on a GEM object's VM_BO list (panthor_gem.c). */
+struct mutex *panthor_fbsd_gpuva_lock(struct drm_gem_object *obj);
+
+/* The scheduler's check for a dying process, as FreeBSD sees it. */
+#define	panthor_fbsd_current_exiting()					\
+	((curproc->p_flag & P_WEXIT) != 0)
+#define	panthor_fbsd_current_killed()	panthor_fbsd_current_exiting()
+
+DEFINE_LOCK_GUARD_1(spinlock, spinlock_t, spin_lock(_T->lock),
+    spin_unlock(_T->lock))
+
+/*
+ * Linux 6.10's disable_work*(): no more queueing until re-enabled.
+ * LinuxKPI has no such state; cancelling is what panthor needs at
+ * teardown, where these are used.
+ */
+#define	disable_work_sync(w)		(cancel_work_sync(w), true)
+#define	disable_delayed_work_sync(w)	(cancel_delayed_work_sync(w), true)
+#define	enable_delayed_work(w)		((void)(w), true)
+
+/* No nvmem: the shader core mask is the GPU's own. */
+#define	nvmem_cell_read_variable_le_u64(dev, id, val)	(*(val) = 0, -ENOENT)
+
+/* Module parameters (hw.panthor), panthor_freebsd_bus.c. */
+#include <sys/sysctl.h>
+SYSCTL_DECL(_hw_panthor);
+
+/* drm-kmod (Linux v6.13) names. */
+bool panthor_fbsd_prime_exported(struct drm_device *dev,
+    struct dma_buf *dma_buf);
+#define	drm_gem_is_prime_exported_dma_buf(dev, dma_buf)			\
+	panthor_fbsd_prime_exported((dev), (dma_buf))
+#define	drm_gem_is_imported(obj)	((obj)->import_attach != NULL)
+#define	drm_gem_vmap(obj, map)		drm_gem_vmap_unlocked(obj, map)
+#define	drm_gem_vunmap(obj, map)	drm_gem_vunmap_unlocked(obj, map)
+
+/* Kernel mappings of buffers the CPU also caches: arm64 is PIPT. */
+#define	flush_kernel_vmap_range(va, size)				\
+	panthor_fbsd_dcache_wb((va), (size))
+#define	invalidate_kernel_vmap_range(va, size)				\
+	panthor_fbsd_dcache_wbinv((va), (size))
+
+/* Tracepoints are not built. */
+#define	trace_drm_sched_job_unschedulable_enabled()	false
+#define	trace_drm_sched_job_add_dep_enabled()		false
 
 /* drm-kmod builds it only for Linux. */
 static inline int

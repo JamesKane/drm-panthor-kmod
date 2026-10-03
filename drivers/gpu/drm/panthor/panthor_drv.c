@@ -1604,8 +1604,10 @@ static void panthor_show_internal_memory_stats(struct drm_printer *p, struct drm
 	panthor_fdinfo_gather_group_mem_info(pfile, &stats);
 	panthor_vm_heaps_sizes(pfile, &stats);
 
+#ifdef __linux__
 	drm_fdinfo_print_size(p, drv_name, "resident", "memory", stats.resident);
 	drm_fdinfo_print_size(p, drv_name, "active", "memory", stats.active);
+#endif
 }
 
 static void panthor_show_fdinfo(struct drm_printer *p, struct drm_file *file)
@@ -1629,7 +1631,9 @@ static const struct file_operations panthor_drm_driver_fops = {
 	.read = drm_read,
 	.llseek = noop_llseek,
 	.mmap = panthor_mmap,
+#ifdef __linux__
 	.get_unmapped_area = drm_gem_get_unmapped_area,
+#endif
 	.show_fdinfo = drm_show_fdinfo,
 	.fop_flags = FOP_UNSIGNED_OFFSET,
 };
@@ -1779,7 +1783,9 @@ static const struct of_device_id dt_match[] = {
 	{ .compatible = "arm,mali-valhall-csf" },
 	{}
 };
+#ifdef __linux__
 MODULE_DEVICE_TABLE(of, dt_match);
+#endif
 
 static DEFINE_RUNTIME_DEV_PM_OPS(panthor_pm_ops,
 				 panthor_device_suspend,
@@ -1793,7 +1799,9 @@ static struct platform_driver panthor_driver = {
 		.name = "panthor",
 		.pm = pm_ptr(&panthor_pm_ops),
 		.of_match_table = dt_match,
+#ifdef __linux__
 		.dev_groups = panthor_groups,
+#endif
 	},
 };
 

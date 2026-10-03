@@ -32,6 +32,12 @@
 #include <linux/interval_tree_generic.h>
 #include <linux/mm.h>
 
+/*
+ * FreeBSD: drm-kmod's (Linux v6.13) drm_gem_object has no gpuva.lock, so
+ * the GEM objects' gpuva.lock is panthor's own, panthor_fbsd_gpuva_lock(obj),
+ * here in place of &obj->gpuva.lock.
+ */
+
 /**
  * DOC: Overview
  *
@@ -1733,7 +1739,7 @@ drm_gpuvm_bo_defer_free(struct kref *kref)
 						  kref);
 
 	drm_gpuvm_bo_into_zombie(kref);
-	mutex_unlock(&vm_bo->obj->gpuva.lock);
+	mutex_unlock(panthor_fbsd_gpuva_lock(vm_bo->obj));
 	drm_gpuvm_bo_defer_zombie_cleanup(vm_bo);
 }
 
@@ -1759,7 +1765,7 @@ drm_gpuvm_bo_put_deferred(struct drm_gpuvm_bo *vm_bo)
 
 	return !!kref_put_mutex(&vm_bo->kref,
 				drm_gpuvm_bo_defer_free,
-				&vm_bo->obj->gpuva.lock);
+				panthor_fbsd_gpuva_lock(vm_bo->obj));
 }
 EXPORT_SYMBOL_GPL(drm_gpuvm_bo_put_deferred);
 
@@ -1907,17 +1913,17 @@ drm_gpuvm_bo_obtain_prealloc(struct drm_gpuvm_bo *__vm_bo)
 
 	drm_WARN_ON(gpuvm->drm, !drm_gpuvm_immediate_mode(gpuvm));
 
-	mutex_lock(&obj->gpuva.lock);
+	mutex_lock(panthor_fbsd_gpuva_lock(obj));
 	vm_bo = drm_gpuvm_bo_find(gpuvm, obj);
 	if (vm_bo) {
-		mutex_unlock(&obj->gpuva.lock);
+		mutex_unlock(panthor_fbsd_gpuva_lock(obj));
 		kref_put(&__vm_bo->kref, drm_gpuvm_bo_destroy_not_in_lists_kref);
 		return vm_bo;
 	}
 
 	drm_gem_gpuva_assert_lock_held(gpuvm, obj);
 	list_add_tail(&__vm_bo->list.entry.gem, &obj->gpuva.list);
-	mutex_unlock(&obj->gpuva.lock);
+	mutex_unlock(panthor_fbsd_gpuva_lock(obj));
 
 	return __vm_bo;
 }
@@ -2161,14 +2167,14 @@ drm_gpuva_unlink_defer(struct drm_gpuva *va)
 
 	drm_WARN_ON(vm_bo->vm->drm, !drm_gpuvm_immediate_mode(vm_bo->vm));
 
-	mutex_lock(&obj->gpuva.lock);
+	mutex_lock(panthor_fbsd_gpuva_lock(obj));
 	list_del_init(&va->gem.entry);
 
 	/*
 	 * This is drm_gpuvm_bo_put_deferred() except we already hold the mutex.
 	 */
 	should_defer_bo = kref_put(&vm_bo->kref, drm_gpuvm_bo_into_zombie);
-	mutex_unlock(&obj->gpuva.lock);
+	mutex_unlock(panthor_fbsd_gpuva_lock(obj));
 	if (should_defer_bo)
 		drm_gpuvm_bo_defer_zombie_cleanup(vm_bo);
 

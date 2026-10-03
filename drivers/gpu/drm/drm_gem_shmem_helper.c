@@ -20,7 +20,9 @@
 #include <drm/drm.h>
 #include <drm/drm_device.h>
 #include <drm/drm_drv.h>
+#ifdef __linux__
 #include <drm/drm_dumb_buffers.h>
+#endif
 #include <drm/drm_gem_shmem_helper.h>
 #include <drm/drm_prime.h>
 #include <drm/drm_print.h>
@@ -85,8 +87,10 @@ static int __drm_gem_shmem_init(struct drm_device *dev, struct drm_gem_shmem_obj
 		 * why this is required _and_ expected if you're
 		 * going to pin these pages.
 		 */
+#ifdef __linux__
 		mapping_set_gfp_mask(obj->filp->f_mapping, GFP_HIGHUSER |
 				     __GFP_RETRY_MAYFAIL | __GFP_NOWARN);
+#endif
 	}
 
 	return 0;
@@ -208,6 +212,62 @@ void drm_gem_shmem_free(struct drm_gem_shmem_object *shmem)
 	kfree(shmem);
 }
 EXPORT_SYMBOL_GPL(drm_gem_shmem_free);
+
+#ifdef __FreeBSD__
+#define	drm_gem_get_pages	drm_gem_shmem_fbsd_get_pages
+#define	drm_gem_put_pages	drm_gem_shmem_fbsd_put_pages
+/*
+ * drm-kmod builds drm_gem_get_pages() for Linux only: the object's shmem is
+ * a VM object, whose pages LinuxKPI returns wired, and put_page() unwires.
+ */
+static struct page **
+drm_gem_get_pages(struct drm_gem_object *obj)
+{
+	struct page **pages;
+	long i, npages;
+
+	if (WARN_ON(obj->filp == NULL))
+		return (ERR_PTR(-EINVAL));
+	npages = obj->size >> PAGE_SHIFT;
+	pages = kvmalloc_array(npages, sizeof(*pages), GFP_KERNEL);
+	if (pages == NULL)
+		return (ERR_PTR(-ENOMEM));
+	for (i = 0; i < npages; i++) {
+		pages[i] = shmem_read_mapping_page_gfp(obj->filp->f_shmem, i,
+		    GFP_KERNEL);
+		if (IS_ERR(pages[i])) {
+			struct page *err = pages[i];
+
+			while (i-- > 0)
+				put_page(pages[i]);
+			kvfree(pages);
+			return (ERR_CAST(err));
+		}
+		/* Its zeroing may be in the cache, to be written back later. */
+		panthor_fbsd_dcache_wbinv(page_address(pages[i]), PAGE_SIZE);
+	}
+	return (pages);
+}
+
+static void
+drm_gem_put_pages(struct drm_gem_object *obj, struct page **pages, bool dirty,
+    bool accessed)
+{
+	long i, npages;
+
+	npages = obj->size >> PAGE_SHIFT;
+	for (i = 0; i < npages; i++) {
+		if (pages[i] == NULL)
+			continue;
+		if (dirty)
+			set_page_dirty(pages[i]);
+		if (accessed)
+			mark_page_accessed(pages[i]);
+		put_page(pages[i]);
+	}
+	kvfree(pages);
+}
+#endif
 
 static int drm_gem_shmem_get_pages_locked(struct drm_gem_shmem_object *shmem)
 {
@@ -506,7 +566,9 @@ void drm_gem_shmem_purge_locked(struct drm_gem_shmem_object *shmem)
 
 	shmem->madv = -1;
 
+#ifdef __linux__
 	drm_vma_node_unmap(&obj->vma_node, dev->anon_inode->i_mapping);
+#endif
 	drm_gem_free_mmap_offset(obj);
 
 	/* Our goal here is to return as much of the memory as
@@ -514,12 +576,17 @@ void drm_gem_shmem_purge_locked(struct drm_gem_shmem_object *shmem)
 	 * To do this we must instruct the shmfs to drop all of its
 	 * backing pages, *now*.
 	 */
+#ifdef __linux__
 	shmem_truncate_range(file_inode(obj->filp), 0, (loff_t)-1);
 
 	invalidate_mapping_pages(file_inode(obj->filp)->i_mapping, 0, (loff_t)-1);
+#else
+	shmem_truncate_range(obj->filp->f_shmem, 0, (loff_t)-1);
+#endif
 }
 EXPORT_SYMBOL_GPL(drm_gem_shmem_purge_locked);
 
+#ifdef __linux__	/* FreeBSD: drm-kmod (Linux v6.13) lacks drm_mode_size_dumb() */
 /**
  * drm_gem_shmem_dumb_create - Create a dumb shmem buffer object
  * @file: DRM file structure to create the dumb buffer for
@@ -549,12 +616,24 @@ int drm_gem_shmem_dumb_create(struct drm_file *file, struct drm_device *dev,
 	return drm_gem_shmem_create_with_handle(file, dev, args->size, &args->handle);
 }
 EXPORT_SYMBOL_GPL(drm_gem_shmem_dumb_create);
+#endif
 
 static vm_fault_t try_insert_pfn(struct vm_fault *vmf, unsigned int order,
 				 unsigned long pfn)
 {
 	if (!order) {
+#ifdef __linux__
 		return vmf_insert_pfn(vmf->vma, vmf->address, pfn);
+#else
+		vm_fault_t ret;
+
+		/* LinuxKPI's insert wants the VM object locked. */
+		VM_OBJECT_WLOCK(vmf->vma->vm_obj);
+		ret = lkpi_vmf_insert_pfn_prot_locked(vmf->vma, vmf->address,
+		    pfn, vmf->vma->vm_page_prot);
+		VM_OBJECT_WUNLOCK(vmf->vma->vm_obj);
+		return ret;
+#endif
 #ifdef CONFIG_ARCH_SUPPORTS_PMD_PFNMAP
 	} else if (order == PMD_ORDER) {
 		unsigned long paddr = pfn << PAGE_SHIFT;
@@ -678,7 +757,11 @@ int drm_gem_shmem_mmap(struct drm_gem_shmem_object *shmem, struct vm_area_struct
 		vma->vm_private_data = NULL;
 		vma->vm_ops = NULL;
 
+#ifdef __linux__
 		ret = dma_buf_mmap(obj->dma_buf, vma, 0);
+#else
+		ret = -EOPNOTSUPP;	/* drm-kmod's dma-buf cannot map */
+#endif
 
 		/* Drop the reference drm_gem_mmap_obj() acquired.*/
 		if (!ret)

@@ -32,24 +32,22 @@
 #include <linux/gfp.h>
 #include <linux/mm.h>
 
+/*
+ * panthor gives io-pgtable its own page table allocator (alloc_pt()), so
+ * these defaults are never used.
+ */
 static inline void *
-iommu_alloc_pages_node(int nid __unused, gfp_t gfp, int order)
+iommu_alloc_pages_node_sz(int nid __unused, gfp_t gfp __unused,
+    size_t size __unused)
 {
-	struct page *page;
-
-	page = alloc_pages(gfp | __GFP_ZERO, order);
-	if (page == NULL)
-		return (NULL);
-	/* The GPU's page table walks do not snoop: write the zeroing back. */
-	panthor_fbsd_dcache_wbinv(page_address(page), PAGE_SIZE << order);
-	return (page_address(page));
+	WARN_ONCE(1, "%s: unused by panthor", __func__);
+	return (NULL);
 }
 
 static inline void
-iommu_free_pages(void *virt, int order)
+iommu_free_pages(void *virt)
 {
-	if (virt != NULL)
-		free_pages((unsigned long)virt, order);
+	WARN_ONCE(virt != NULL, "%s: unused by panthor", __func__);
 }
 
 #endif
