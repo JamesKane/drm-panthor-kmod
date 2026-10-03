@@ -377,8 +377,10 @@ static vm_fault_t panthor_mmio_vm_fault(struct vm_fault *vmf)
 #ifdef __linux__
 	ret = vmf_insert_pfn_prot(vma, vmf->address, pfn, pgprot);
 #else
-	/* LinuxKPI faults with the VM object locked. */
+	/* LinuxKPI's insert wants the VM object locked, as ttm's faults do. */
+	VM_OBJECT_WLOCK(vma->vm_obj);
 	ret = lkpi_vmf_insert_pfn_prot_locked(vma, vmf->address, pfn, pgprot);
+	VM_OBJECT_WUNLOCK(vma->vm_obj);
 #endif
 
 out_unlock:
@@ -387,8 +389,25 @@ out_unlock:
 	return ret;
 }
 
+#ifdef __FreeBSD__
+/* LinuxKPI maps only areas whose operations have open and close. */
+static void
+panthor_mmio_vm_open(struct vm_area_struct *vma)
+{
+}
+
+static void
+panthor_mmio_vm_close(struct vm_area_struct *vma)
+{
+}
+#endif
+
 static const struct vm_operations_struct panthor_mmio_vm_ops = {
 	.fault = panthor_mmio_vm_fault,
+#ifdef __FreeBSD__
+	.open = panthor_mmio_vm_open,
+	.close = panthor_mmio_vm_close,
+#endif
 };
 
 int panthor_device_mmap_io(struct panthor_device *ptdev, struct vm_area_struct *vma)

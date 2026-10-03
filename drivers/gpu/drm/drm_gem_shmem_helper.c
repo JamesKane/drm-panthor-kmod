@@ -618,9 +618,11 @@ static vm_fault_t drm_gem_shmem_fault(struct vm_fault *vmf)
 	} else {
 		page = shmem->pages[page_offset];
 
-		/* LinuxKPI faults with the VM object locked. */
+		/* LinuxKPI's insert wants the VM object locked. */
+		VM_OBJECT_WLOCK(vma->vm_obj);
 		ret = lkpi_vmf_insert_pfn_prot_locked(vma, vmf->address,
 		    page_to_pfn(page), vma->vm_page_prot);
+		VM_OBJECT_WUNLOCK(vma->vm_obj);
 	}
 
 	dma_resv_unlock(shmem->base.resv);
