@@ -221,11 +221,15 @@ clk_set_rate(struct clk *clk, unsigned long rate)
 }
 
 /*
- * DMA: the firmware says the GPU is coherent (_CCA), but CIX's Linux treats
- * it as not, as the display controller reads buffers without snooping.
+ * DMA: coherent, as the firmware says (_CCA), and so FreeBSD's DMA tag for
+ * the device does no cache maintenance: the GPU speaks ACE-Lite (its
+ * COHERENCY_FEATURES), so its reads snoop the CPU's caches.  CIX's Linux
+ * makes it non-coherent for its display controller, which reads the GPU's
+ * buffers without snooping; here the CPU copies them to the framebuffer
+ * (sysfbdrm), invalidating first.
  */
 enum dev_dma_attr
 device_get_dma_attr(struct device *dev __unused)
 {
-	return (DEV_DMA_NON_COHERENT);
+	return (DEV_DMA_COHERENT);
 }

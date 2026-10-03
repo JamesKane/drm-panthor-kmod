@@ -349,6 +349,17 @@ int panthor_gpu_block_power_on(struct panthor_device *ptdev,
  *
  * Return: 0 on success, a negative error code otherwise.
  */
+/*
+ * The GPU's coherency protocol, before L2 powers up: ACE-Lite when the
+ * system is coherent (its reads snoop the CPU's caches), else none.  As
+ * Linux v6.18 does, but writing the mode, not its feature bit.
+ */
+static void panthor_gpu_coherency_set(struct panthor_device *ptdev)
+{
+	gpu_write(ptdev, GPU_COHERENCY_PROTOCOL,
+		  ptdev->coherent ? GPU_COHERENCY_ACE_LITE : GPU_COHERENCY_NONE);
+}
+
 int panthor_gpu_l2_power_on(struct panthor_device *ptdev)
 {
 	if (ptdev->gpu_info.l2_present != 1) {
@@ -365,6 +376,9 @@ int panthor_gpu_l2_power_on(struct panthor_device *ptdev)
 			      hweight64(core_mask),
 			      hweight64(ptdev->gpu_info.shader_present));
 	}
+
+	/* Set the desired coherency mode before the power up of L2 */
+	panthor_gpu_coherency_set(ptdev);
 
 	return panthor_gpu_power_on(ptdev, L2, 1, 20000);
 }
