@@ -1580,7 +1580,9 @@ static const struct of_device_id dt_match[] = {
 	{ .compatible = "arm,mali-valhall-csf" },
 	{}
 };
+#ifdef __linux__
 MODULE_DEVICE_TABLE(of, dt_match);
+#endif
 
 static DEFINE_RUNTIME_DEV_PM_OPS(panthor_pm_ops,
 				 panthor_device_suspend,
@@ -1594,7 +1596,9 @@ static struct platform_driver panthor_driver = {
 		.name = "panthor",
 		.pm = pm_ptr(&panthor_pm_ops),
 		.of_match_table = dt_match,
+#ifdef __linux__
 		.dev_groups = panthor_groups,
+#endif
 	},
 };
 

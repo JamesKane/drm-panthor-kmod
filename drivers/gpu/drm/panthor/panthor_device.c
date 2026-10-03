@@ -374,7 +374,12 @@ static vm_fault_t panthor_mmio_vm_fault(struct vm_fault *vmf)
 	if (active)
 		pgprot = pgprot_noncached(pgprot);
 
+#ifdef __linux__
 	ret = vmf_insert_pfn_prot(vma, vmf->address, pfn, pgprot);
+#else
+	/* LinuxKPI faults with the VM object locked. */
+	ret = lkpi_vmf_insert_pfn_prot_locked(vma, vmf->address, pfn, pgprot);
+#endif
 
 out_unlock:
 	mutex_unlock(&ptdev->pm.mmio_lock);
@@ -468,8 +473,10 @@ int panthor_device_resume(struct device *dev)
 	 * access.
 	 */
 	mutex_lock(&ptdev->pm.mmio_lock);
+#ifdef __linux__	/* FreeBSD: the glue keeps the GPU resumed */
 	unmap_mapping_range(ptdev->base.anon_inode->i_mapping,
 			    DRM_PANTHOR_USER_MMIO_OFFSET, 0, 1);
+#endif
 	atomic_set(&ptdev->pm.state, PANTHOR_DEVICE_PM_STATE_ACTIVE);
 	mutex_unlock(&ptdev->pm.mmio_lock);
 	return 0;
@@ -508,8 +515,10 @@ int panthor_device_suspend(struct device *dev)
 	 */
 	mutex_lock(&ptdev->pm.mmio_lock);
 	atomic_set(&ptdev->pm.state, PANTHOR_DEVICE_PM_STATE_SUSPENDING);
+#ifdef __linux__	/* FreeBSD: the glue keeps the GPU resumed */
 	unmap_mapping_range(ptdev->base.anon_inode->i_mapping,
 			    DRM_PANTHOR_USER_MMIO_OFFSET, 0, 1);
+#endif
 	mutex_unlock(&ptdev->pm.mmio_lock);
 
 	if (panthor_device_is_initialized(ptdev) &&
@@ -554,8 +563,10 @@ err_set_active:
 	 */
 	mutex_lock(&ptdev->pm.mmio_lock);
 	atomic_set(&ptdev->pm.state, PANTHOR_DEVICE_PM_STATE_ACTIVE);
+#ifdef __linux__	/* FreeBSD: the glue keeps the GPU resumed */
 	unmap_mapping_range(ptdev->base.anon_inode->i_mapping,
 			    DRM_PANTHOR_USER_MMIO_OFFSET, 0, 1);
+#endif
 	mutex_unlock(&ptdev->pm.mmio_lock);
 	return ret;
 }

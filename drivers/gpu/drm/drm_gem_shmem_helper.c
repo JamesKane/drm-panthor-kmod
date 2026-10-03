@@ -98,8 +98,10 @@ __drm_gem_shmem_create(struct drm_device *dev, size_t size, bool private,
 		 * why this is required _and_ expected if you're
 		 * going to pin these pages.
 		 */
+#ifdef __linux__
 		mapping_set_gfp_mask(obj->filp->f_mapping, GFP_HIGHUSER |
 				     __GFP_RETRY_MAYFAIL | __GFP_NOWARN);
+#endif
 	}
 
 	return shmem;
@@ -185,6 +187,61 @@ void drm_gem_shmem_free(struct drm_gem_shmem_object *shmem)
 	kfree(shmem);
 }
 EXPORT_SYMBOL_GPL(drm_gem_shmem_free);
+
+
+#ifdef __FreeBSD__
+#define	drm_gem_get_pages	drm_gem_shmem_fbsd_get_pages
+#define	drm_gem_put_pages	drm_gem_shmem_fbsd_put_pages
+/*
+ * drm-kmod builds drm_gem_get_pages() for Linux only: the object's shmem is
+ * a VM object, whose pages LinuxKPI returns wired, and put_page() unwires.
+ */
+static struct page **
+drm_gem_get_pages(struct drm_gem_object *obj)
+{
+	struct page **pages;
+	long i, npages;
+
+	if (WARN_ON(obj->filp == NULL))
+		return (ERR_PTR(-EINVAL));
+	npages = obj->size >> PAGE_SHIFT;
+	pages = kvmalloc_array(npages, sizeof(*pages), GFP_KERNEL);
+	if (pages == NULL)
+		return (ERR_PTR(-ENOMEM));
+	for (i = 0; i < npages; i++) {
+		pages[i] = shmem_read_mapping_page_gfp(obj->filp->f_shmem, i,
+		    GFP_KERNEL);
+		if (IS_ERR(pages[i])) {
+			struct page *err = pages[i];
+
+			while (i-- > 0)
+				put_page(pages[i]);
+			kvfree(pages);
+			return (ERR_CAST(err));
+		}
+	}
+	return (pages);
+}
+
+static void
+drm_gem_put_pages(struct drm_gem_object *obj, struct page **pages, bool dirty,
+    bool accessed)
+{
+	long i, npages;
+
+	npages = obj->size >> PAGE_SHIFT;
+	for (i = 0; i < npages; i++) {
+		if (pages[i] == NULL)
+			continue;
+		if (dirty)
+			set_page_dirty(pages[i]);
+		if (accessed)
+			mark_page_accessed(pages[i]);
+		put_page(pages[i]);
+	}
+	kvfree(pages);
+}
+#endif
 
 static int drm_gem_shmem_get_pages(struct drm_gem_shmem_object *shmem)
 {
@@ -480,7 +537,9 @@ void drm_gem_shmem_purge(struct drm_gem_shmem_object *shmem)
 
 	shmem->madv = -1;
 
+#ifdef __linux__
 	drm_vma_node_unmap(&obj->vma_node, dev->anon_inode->i_mapping);
+#endif
 	drm_gem_free_mmap_offset(obj);
 
 	/* Our goal here is to return as much of the memory as
@@ -488,9 +547,15 @@ void drm_gem_shmem_purge(struct drm_gem_shmem_object *shmem)
 	 * To do this we must instruct the shmfs to drop all of its
 	 * backing pages, *now*.
 	 */
+#ifdef __linux__
 	shmem_truncate_range(file_inode(obj->filp), 0, (loff_t)-1);
+#else
+	shmem_truncate_range(obj->filp->f_shmem, 0, (loff_t)-1);
+#endif
 
+#ifdef __linux__
 	invalidate_mapping_pages(file_inode(obj->filp)->i_mapping, 0, (loff_t)-1);
+#endif
 }
 EXPORT_SYMBOL(drm_gem_shmem_purge);
 
@@ -553,7 +618,9 @@ static vm_fault_t drm_gem_shmem_fault(struct vm_fault *vmf)
 	} else {
 		page = shmem->pages[page_offset];
 
-		ret = vmf_insert_pfn(vma, vmf->address, page_to_pfn(page));
+		/* LinuxKPI faults with the VM object locked. */
+		ret = lkpi_vmf_insert_pfn_prot_locked(vma, vmf->address,
+		    page_to_pfn(page), vma->vm_page_prot);
 	}
 
 	dma_resv_unlock(shmem->base.resv);
@@ -626,7 +693,11 @@ int drm_gem_shmem_mmap(struct drm_gem_shmem_object *shmem, struct vm_area_struct
 		vma->vm_private_data = NULL;
 		vma->vm_ops = NULL;
 
+#ifdef __linux__
 		ret = dma_buf_mmap(obj->dma_buf, vma, 0);
+#else
+		ret = -EOPNOTSUPP;	/* drm-kmod's dma-buf cannot map */
+#endif
 
 		/* Drop the reference drm_gem_mmap_obj() acquired.*/
 		if (!ret)
