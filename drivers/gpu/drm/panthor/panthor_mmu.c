@@ -2022,7 +2022,7 @@ static u64 mair_to_memattr(u64 mair, bool coherent)
 				   AS_MEMATTR_AARCH64_SH_MIDGARD_INNER |
 				   AS_MEMATTR_AARCH64_INNER_ALLOC_EXPL(false, false);
 #ifdef __FreeBSD__
-		} else if (!coherent) {
+		} else if (!coherent && panthor_fbsd_gpu_nc) {
 			/*
 			 * CIX's Linux on Sky1: with no IOMMU, a GPU not fully
 			 * coherent maps memory non-cacheable, so that what it

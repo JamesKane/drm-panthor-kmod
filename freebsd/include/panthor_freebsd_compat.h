@@ -216,6 +216,10 @@ void panthor_fbsd_sgt_wbinv(struct sg_table *sgt);
 #define	kvmalloc_objs(obj, count, ...)					\
 	kvmalloc_array((count), sizeof(obj), default_gfp(__VA_ARGS__))
 
+/* Sky1 coherency switches (panthor_device.c). */
+extern bool panthor_fbsd_ace_lite;
+extern bool panthor_fbsd_gpu_nc;
+
 /* drm_gpuvm's lock on a GEM object's VM_BO list (panthor_gem.c). */
 struct mutex *panthor_fbsd_gpuva_lock(struct drm_gem_object *obj);
 

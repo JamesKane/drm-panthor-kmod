@@ -26,6 +26,16 @@
 #include "panthor_regs.h"
 #include "panthor_sched.h"
 
+#ifdef __FreeBSD__
+/* Sky1's coherency, as CIX's Linux has it unless these say otherwise. */
+bool panthor_fbsd_ace_lite = true;
+module_param_named(sky1_ace_lite, panthor_fbsd_ace_lite, bool, 0400);
+MODULE_PARM_DESC(sky1_ace_lite, "Sky1: ACE-Lite coherency on the bus");
+bool panthor_fbsd_gpu_nc = true;
+module_param_named(sky1_gpu_nc, panthor_fbsd_gpu_nc, bool, 0400);
+MODULE_PARM_DESC(sky1_gpu_nc, "Sky1: GPU maps memory non-cacheable");
+#endif
+
 static int panthor_gpu_coherency_init(struct panthor_device *ptdev)
 {
 	BUILD_BUG_ON(GPU_COHERENCY_NONE != DRM_PANTHOR_GPU_COHERENCY_NONE);
@@ -42,8 +52,9 @@ static int panthor_gpu_coherency_init(struct panthor_device *ptdev)
 	 * not coherent otherwise (ptdev->coherent false), its mappings of
 	 * memory non-cacheable (mair_to_memattr()), as it has no IOMMU.
 	 */
-	if (gpu_read(ptdev, GPU_COHERENCY_FEATURES) &
-	    GPU_COHERENCY_PROT_BIT(ACE_LITE))
+	if (panthor_fbsd_ace_lite &&
+	    (gpu_read(ptdev, GPU_COHERENCY_FEATURES) &
+	     GPU_COHERENCY_PROT_BIT(ACE_LITE)))
 		ptdev->gpu_info.selected_coherency = GPU_COHERENCY_ACE_LITE;
 #endif
 
