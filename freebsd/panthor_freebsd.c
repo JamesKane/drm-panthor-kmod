@@ -37,6 +37,7 @@
 #include <linux/ioport.h>
 #include <linux/platform_device.h>
 #include <linux/pm_runtime.h>
+#include <linux/scatterlist.h>
 #include <linux/slab.h>
 
 #include <drm/drm_device.h>
@@ -233,12 +234,25 @@ clk_set_rate(struct clk *clk, unsigned long rate)
  * The firmware says coherent (_CCA), and FreeBSD's DMA tag for the device
  * follows it, doing no cache maintenance: the glue does what panthor needs
  * of it, writing back and invalidating new GEM and page table pages, and
- * writing back page table updates (panthor_fbsd_dcache_*()).
+ * writing back page table updates, and the BO_SYNC ioctl's and dma-buf CPU
+ * access's maintenance of cached mappings (panthor_fbsd_dcache_*()).
  */
 enum dev_dma_attr
 device_get_dma_attr(struct device *dev __unused)
 {
 	return (DEV_DMA_NON_COHERENT);
+}
+
+/* What dma_sync_sgtable_for_*() would do of a GEM object's pages. */
+void
+panthor_fbsd_sgt_wbinv(struct sg_table *sgt)
+{
+	struct scatterlist *sg;
+	int i;
+
+	for_each_sgtable_dma_sg(sgt, sg, i)
+		panthor_fbsd_dcache_wbinv(panthor_fbsd_dma_va(sg_dma_address(sg)),
+		    sg_dma_len(sg));
 }
 
 /*

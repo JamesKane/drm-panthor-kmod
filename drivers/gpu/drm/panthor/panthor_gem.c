@@ -271,6 +271,10 @@ panthor_gem_prime_begin_cpu_access(struct dma_buf *dma_buf,
 	dma_resv_lock(obj->resv, NULL);
 	if (shmem->sgt)
 		dma_sync_sgtable_for_cpu(dev->dev, shmem->sgt, dir);
+#ifdef __FreeBSD__
+	if (shmem->sgt && !shmem->map_wc)
+		panthor_fbsd_sgt_wbinv(shmem->sgt);
+#endif
 
 	if (shmem->vaddr)
 		invalidate_kernel_vmap_range(shmem->vaddr, shmem->base.size);
@@ -308,6 +312,10 @@ panthor_gem_prime_end_cpu_access(struct dma_buf *dma_buf,
 
 	if (shmem->sgt)
 		dma_sync_sgtable_for_device(dev->dev, shmem->sgt, dir);
+#ifdef __FreeBSD__
+	if (shmem->sgt && !shmem->map_wc)
+		panthor_fbsd_sgt_wbinv(shmem->sgt);
+#endif
 
 	dma_resv_unlock(obj->resv);
 	return 0;
@@ -609,9 +617,18 @@ panthor_gem_sync(struct drm_gem_object *obj, u32 type,
 		 *
 		 * for the flush+invalidate case.
 		 */
+#ifdef __FreeBSD__
+		/* FreeBSD's DMA tag for the GPU skips it: see panthor_freebsd.c. */
+		(void)dev;
+		if (type == DRM_PANTHOR_BO_SYNC_CPU_CACHE_FLUSH_AND_INVALIDATE)
+			panthor_fbsd_dcache_wbinv(panthor_fbsd_dma_va(paddr), len);
+		else
+			panthor_fbsd_dcache_wb(panthor_fbsd_dma_va(paddr), len);
+#else
 		dma_sync_single_for_device(dev->dev, paddr, len, DMA_TO_DEVICE);
 		if (type == DRM_PANTHOR_BO_SYNC_CPU_CACHE_FLUSH_AND_INVALIDATE)
 			dma_sync_single_for_cpu(dev->dev, paddr, len, DMA_FROM_DEVICE);
+#endif
 	}
 
 	return 0;

@@ -50,8 +50,18 @@ struct panthor_gpu {
 
 static void panthor_gpu_coherency_set(struct panthor_device *ptdev)
 {
+#ifdef __FreeBSD__
+	u32 val = ptdev->gpu_info.selected_coherency;
+
+	/* CIX's Linux on Sky1: and its shareable cache support, if any. */
+	if (val != GPU_COHERENCY_NONE &&
+	    (gpu_read(ptdev, GPU_COHERENCY_FEATURES) & BIT(5)))
+		val |= BIT(5);
+	gpu_write(ptdev, GPU_COHERENCY_PROTOCOL, val);
+#else
 	gpu_write(ptdev, GPU_COHERENCY_PROTOCOL,
 		  ptdev->gpu_info.selected_coherency);
+#endif
 }
 
 static void panthor_gpu_l2_config_set(struct panthor_device *ptdev)

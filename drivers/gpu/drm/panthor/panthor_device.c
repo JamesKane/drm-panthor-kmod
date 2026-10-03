@@ -36,6 +36,17 @@ static int panthor_gpu_coherency_init(struct panthor_device *ptdev)
 	ptdev->gpu_info.selected_coherency = GPU_COHERENCY_NONE;
 	ptdev->coherent = device_get_dma_attr(ptdev->base.dev) == DEV_DMA_COHERENT;
 
+#ifdef __FreeBSD__
+	/*
+	 * CIX Sky1, as CIX's Linux runs it: ACE-Lite on the bus, but the GPU
+	 * not coherent otherwise (ptdev->coherent false), its mappings of
+	 * memory non-cacheable (mair_to_memattr()), as it has no IOMMU.
+	 */
+	if (gpu_read(ptdev, GPU_COHERENCY_FEATURES) &
+	    GPU_COHERENCY_PROT_BIT(ACE_LITE))
+		ptdev->gpu_info.selected_coherency = GPU_COHERENCY_ACE_LITE;
+#endif
+
 	if (!ptdev->coherent)
 		return 0;
 

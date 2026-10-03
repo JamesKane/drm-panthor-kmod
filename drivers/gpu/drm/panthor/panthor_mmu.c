@@ -2021,6 +2021,17 @@ static u64 mair_to_memattr(u64 mair, bool coherent)
 			out_attr = AS_MEMATTR_AARCH64_INNER_OUTER_NC |
 				   AS_MEMATTR_AARCH64_SH_MIDGARD_INNER |
 				   AS_MEMATTR_AARCH64_INNER_ALLOC_EXPL(false, false);
+#ifdef __FreeBSD__
+		} else if (!coherent) {
+			/*
+			 * CIX's Linux on Sky1: with no IOMMU, a GPU not fully
+			 * coherent maps memory non-cacheable, so that what it
+			 * writes reaches memory (panthor_gpu_coherency_init()).
+			 */
+			out_attr = AS_MEMATTR_AARCH64_INNER_OUTER_NC |
+				   AS_MEMATTR_AARCH64_SH_MIDGARD_INNER |
+				   AS_MEMATTR_AARCH64_INNER_ALLOC_EXPL(false, false);
+#endif
 		} else {
 			out_attr = AS_MEMATTR_AARCH64_INNER_OUTER_WB |
 				   AS_MEMATTR_AARCH64_INNER_ALLOC_EXPL(inner & 1, inner & 2);

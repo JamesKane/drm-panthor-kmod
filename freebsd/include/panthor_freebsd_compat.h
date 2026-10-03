@@ -186,6 +186,13 @@ panthor_fbsd_dcache_wb(const void *va, size_t len)
 	cpu_dcache_wb_range(__DECONST(void *, va), len);
 }
 
+/* The direct map's address of DMA memory: the GPU has no IOMMU. */
+#include <machine/vmparam.h>
+#define	panthor_fbsd_dma_va(addr)	((void *)PHYS_TO_DMAP(addr))
+
+struct sg_table;
+void panthor_fbsd_sgt_wbinv(struct sg_table *sgt);
+
 /* Linux v7.0 interfaces panthor and its bundled DRM helpers use. */
 #include <linux/bits.h>
 #include <linux/cleanup.h>
