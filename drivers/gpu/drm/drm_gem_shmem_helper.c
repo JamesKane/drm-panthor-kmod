@@ -219,6 +219,8 @@ drm_gem_get_pages(struct drm_gem_object *obj)
 			kvfree(pages);
 			return (ERR_CAST(err));
 		}
+		/* Its zeroing may be in the cache, to be written back later. */
+		panthor_fbsd_dcache_wbinv(page_address(pages[i]), PAGE_SIZE);
 	}
 	return (pages);
 }

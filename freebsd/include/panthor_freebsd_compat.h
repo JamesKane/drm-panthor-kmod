@@ -167,6 +167,23 @@ drmm_mutex_init(struct drm_device *dev, struct mutex *lock)
 	    lock));
 }
 
+/*
+ * Cache maintenance FreeBSD's DMA tag skips, as the firmware calls the GPU
+ * coherent (see device_get_dma_attr() in panthor_freebsd.c).
+ */
+#include <machine/cpufunc.h>
+static inline void
+panthor_fbsd_dcache_wbinv(const void *va, size_t len)
+{
+	cpu_dcache_wbinv_range(__DECONST(void *, va), len);
+}
+
+static inline void
+panthor_fbsd_dcache_wb(const void *va, size_t len)
+{
+	cpu_dcache_wb_range(__DECONST(void *, va), len);
+}
+
 /* drm-kmod builds it only for Linux. */
 static inline int
 drm_debugfs_gpuva_info(struct seq_file *m __unused,

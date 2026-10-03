@@ -38,7 +38,11 @@ iommu_alloc_pages_node(int nid __unused, gfp_t gfp, int order)
 	struct page *page;
 
 	page = alloc_pages(gfp | __GFP_ZERO, order);
-	return (page != NULL ? page_address(page) : NULL);
+	if (page == NULL)
+		return (NULL);
+	/* The GPU's page table walks do not snoop: write the zeroing back. */
+	panthor_fbsd_dcache_wbinv(page_address(page), PAGE_SIZE << order);
+	return (page_address(page));
 }
 
 static inline void
