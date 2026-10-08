@@ -54,6 +54,7 @@
 #include <sys/kernel.h>
 #include <sys/module.h>
 #include <sys/rman.h>
+#include <sys/sbuf.h>
 #include <sys/sysctl.h>
 
 #include <vm/vm.h>
@@ -190,6 +191,123 @@ panthor_fbsd_teardown(struct panthor_fbsd_softc *sc)
 	sc->rcsu = NULL;
 }
 
+/*
+ * The SCMI performance domain named "perf": "power-domains" is a package of
+ * (reference, domain) pairs, "power-domain-names" their names.
+ */
+int
+panthor_fbsd_perf_domain(uint32_t *domain)
+{
+	struct panthor_fbsd_softc *sc = panthor_fbsd_sc;
+	const ACPI_OBJECT *pds, *names, *e;
+	device_t bus;
+	uint32_t i, k;
+
+	if (sc == NULL)
+		return (ENXIO);
+	bus = device_get_parent(sc->dev);
+	if (ACPI_FAILURE(ACPI_GET_PROPERTY(bus, sc->dev, "power-domains",
+	    &pds)) || pds->Type != ACPI_TYPE_PACKAGE ||
+	    ACPI_FAILURE(ACPI_GET_PROPERTY(bus, sc->dev, "power-domain-names",
+	    &names)))
+		return (ENOENT);
+	for (i = 0, k = 0; i + 1 < pds->Package.Count; i++) {
+		e = &pds->Package.Elements[i];
+		if (e->Type != ACPI_TYPE_LOCAL_REFERENCE)
+			continue;
+		e++;
+		if (e->Type != ACPI_TYPE_INTEGER)
+			return (ENOENT);
+		/* The k-th pair's name: a string, or a package of them. */
+		if ((names->Type == ACPI_TYPE_STRING && k == 0 &&
+		    strcmp(names->String.Pointer, "perf") == 0) ||
+		    (names->Type == ACPI_TYPE_PACKAGE &&
+		    k < names->Package.Count &&
+		    names->Package.Elements[k].Type == ACPI_TYPE_STRING &&
+		    strcmp(names->Package.Elements[k].String.Pointer,
+		    "perf") == 0)) {
+			*domain = e->Integer.Value;
+			return (0);
+		}
+		k++;
+	}
+	return (ENOENT);
+}
+
+static int
+panthor_fbsd_freq_sysctl(SYSCTL_HANDLER_ARGS)
+{
+	uint32_t cur, fixed;
+	int load, val;
+
+	panthor_fbsd_devfreq_state(&cur, &fixed, &load);
+	val = arg2 == 0 ? cur / 1000 : arg2 == 1 ? load : fixed / 1000;
+	return (sysctl_handle_int(oidp, &val, 0, req));
+}
+
+static int
+panthor_fbsd_fixed_sysctl(SYSCTL_HANDLER_ARGS)
+{
+	uint32_t cur, fixed;
+	int error, load, mhz;
+
+	panthor_fbsd_devfreq_state(&cur, &fixed, &load);
+	mhz = fixed / 1000;
+	error = sysctl_handle_int(oidp, &mhz, 0, req);
+	if (error != 0 || req->newptr == NULL)
+		return (error);
+	if (mhz < 0)
+		return (EINVAL);
+	return (panthor_fbsd_devfreq_fix(mhz * 1000));
+}
+
+static int
+panthor_fbsd_levels_sysctl(SYSCTL_HANDLER_ARGS)
+{
+	uint32_t khz[16];
+	struct sbuf sb;
+	int error, i, n;
+
+	n = MIN(panthor_fbsd_devfreq_levels(khz, nitems(khz)), nitems(khz));
+	sbuf_new_for_sysctl(&sb, NULL, 64, req);
+	for (i = 0; i < n; i++)
+		sbuf_printf(&sb, "%s%u", i > 0 ? " " : "", khz[i] / 1000);
+	error = sbuf_finish(&sb);
+	sbuf_delete(&sb);
+	return (error);
+}
+
+/*
+ * The GPU's clock, if the firmware gives it a performance domain.  panthor
+ * may not have probed yet (LinuxKPI defers it at boot): until it has, and
+ * if its devfreq finds no levels, they read as none.
+ */
+static void
+panthor_fbsd_devfreq_sysctls(device_t dev)
+{
+	struct sysctl_ctx_list *ctx;
+	struct sysctl_oid_list *kids;
+	uint32_t domain;
+
+	if (panthor_fbsd_perf_domain(&domain) != 0)
+		return;
+	ctx = device_get_sysctl_ctx(dev);
+	kids = SYSCTL_CHILDREN(device_get_sysctl_tree(dev));
+	SYSCTL_ADD_PROC(ctx, kids, OID_AUTO, "freq",
+	    CTLTYPE_INT | CTLFLAG_RD | CTLFLAG_MPSAFE, NULL, 0,
+	    panthor_fbsd_freq_sysctl, "I", "GPU clock (MHz)");
+	SYSCTL_ADD_PROC(ctx, kids, OID_AUTO, "load",
+	    CTLTYPE_INT | CTLFLAG_RD | CTLFLAG_MPSAFE, NULL, 1,
+	    panthor_fbsd_freq_sysctl, "I", "GPU busy in the last 50 ms (%)");
+	SYSCTL_ADD_PROC(ctx, kids, OID_AUTO, "freq_fixed",
+	    CTLTYPE_INT | CTLFLAG_RW | CTLFLAG_MPSAFE, NULL, 0,
+	    panthor_fbsd_fixed_sysctl, "I",
+	    "GPU clock pinned (MHz, one of freq_levels), 0 to follow the load");
+	SYSCTL_ADD_PROC(ctx, kids, OID_AUTO, "freq_levels",
+	    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_MPSAFE, NULL, 0,
+	    panthor_fbsd_levels_sysctl, "A", "GPU clock levels (MHz)");
+}
+
 static int
 panthor_fbsd_probe(device_t dev)
 {
@@ -246,10 +364,12 @@ panthor_fbsd_attach(device_t dev)
 	sc->clocked = false;
 	error = -panthor_fbsd_linux_attach(dev, gpu_pa, gpu_size, irqs);
 	if (error != 0) {
+		panthor_fbsd_devfreq_fini();
 		panthor_fbsd_linux_detach();
 		sc->clocked = true;
 		goto fail;
 	}
+	panthor_fbsd_devfreq_sysctls(dev);
 	return (0);
 fail:
 	panthor_fbsd_teardown(sc);
@@ -265,6 +385,7 @@ panthor_fbsd_detach(device_t dev)
 	/* Closing files later would call into the unloaded module. */
 	if (panthor_fbsd_linux_busy())
 		return (EBUSY);
+	panthor_fbsd_devfreq_fini();
 	panthor_fbsd_linux_detach();
 	panthor_fbsd_teardown(sc);
 	panthor_fbsd_sc = NULL;

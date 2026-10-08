@@ -23,8 +23,13 @@ firmware describes in ACPI.
     Q-channel clock gating, through FreeBSD's `sky1_scmi`.
   - `panthor_freebsd.c`: the platform device panthor attaches to; clocks by
     the names of the ACPI CLKT table; DMA attributes.
-  - `panthor_freebsd_devfreq.c`: in place of `panthor_devfreq.c`, a fixed
-    clock for now.
+  - `panthor_freebsd_devfreq.c`: in place of `panthor_devfreq.c`, Linux's
+    policy without its devfreq and OPP cores: utilization from panthor's
+    busy and idle notes, sampled every 50 ms, and `simple_ondemand` with
+    panthor's thresholds (45, 5), over the SCMI performance domain the GPU's
+    `_DSD` names `"perf"` (`gpu_core`: 72 to 1000 MHz), through `sky1_scmi`.
+    `dev.panthor.0.freq`, `load`, `freq_levels`, and `freq_fixed` to pin a
+    level (0 follows the load).
   - `include/`: Linux headers LinuxKPI lacks or stubs, searched first, and
     `panthor_freebsd_compat.h`, included into every file, with what
     LinuxKPI and drm-kmod lack of Linux v7.0.

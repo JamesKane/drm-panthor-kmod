@@ -41,6 +41,15 @@
 /* panthor_freebsd_bus.c */
 int	panthor_fbsd_clk_id(const char *name, uint32_t *id);
 
+/* The SCMI performance domain _DSD "power-domains" names "perf". */
+int	panthor_fbsd_perf_domain(uint32_t *domain);
+
+/* panthor_freebsd_devfreq.c: the GPU's clock (kHz), for the sysctls. */
+int	panthor_fbsd_devfreq_levels(uint32_t *khz, int max);
+void	panthor_fbsd_devfreq_state(uint32_t *cur, uint32_t *fixed, int *load);
+int	panthor_fbsd_devfreq_fix(uint32_t khz);
+void	panthor_fbsd_devfreq_fini(void);
+
 /* panthor_freebsd.c: create and delete the platform device. */
 int	panthor_fbsd_linux_attach(device_t dev, uint64_t pa, uint64_t size,
 	    const int *irqs);

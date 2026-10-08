@@ -22,7 +22,7 @@ SRCS=	panthor_device.c \
 	panthor_pwr.c \
 	panthor_sched.c
 
-# In place of panthor_devfreq.c: a fixed clock for now.
+# In place of panthor_devfreq.c: simple_ondemand over SCMI (Sky1).
 SRCS+=	panthor_freebsd_devfreq.c
 
 SRCS+=	panthor_freebsd.c \
